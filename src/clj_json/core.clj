@@ -1,43 +1,69 @@
-(ns clj-json.core)
+(ns clj-json.core
+  (:refer-clojure :exclude [char])
+  (:require [the.parsatron :refer :all]))
 
-(defn- blank? [c]
-  (#{\space \tab \return \newline} c))
+(declare json-value)
 
-(defn- string? [c]
-  (= \" c))
+(defparser blank []
+  (many (token #{\newline \ \tab})))
 
-(defn- number? [c]
-  (Character/isDigit c))
+(defparser json-number []
+  (let->> [_ (blank)
+           nums (many1 (digit))
+           _ (blank)]
+    (always (read-string (apply str nums)))))
 
-(defn- object? [c]
-  (= \{ c))
+(defparser json-string []
+  (let->> [chars (between (>> (blank) (char \"))
+                          (>> (char \") (blank))
+                          (many (either (let->> [_ (lookahead (>> (char \\) (char \")))
+                                                 _ (times 2 (any-char))]
+                                          (always \"))
+                                        (token #(not= \" %)))))]
+    (always (apply str chars))))
 
-(defn- array? [c]
-  (= \[ c))
+(defparser json-array []
+  (let [element (let->> [_ (blank)
+                         v (json-value)
+                         _ (blank)]
+                  (always v))]
+    (let->> [_ (>> (blank) (char \[))
+             v element
+             vs (many (let->> [_ (char \,) 
+                               v element]
+                        (always v)))
+             _ (>> (char \]) (blank))]
+      (always (apply vector v vs)))))
 
-(defrecord Holder [raw-input parsed err])
+(defparser json-object []
+  (let [tuple (let->> [_ (blank)
+                       k (json-string)
+                       _ (>> (blank) (char \:) (blank))
+                       v (json-value)
+                       _ (blank)]
+                (always {k v}))]
+    (let->> [_ (>> (blank) (char \{))
+             first-tuple tuple 
+             rest-tuple (many (let->> [_ (char \,) 
+                                       another-tuple tuple
+                                       _ (blank)]
+                                (always another-tuple)))
+             _ (>> (char \}) (blank))]
+      (always (merge first-tuple
+                     (into {} rest-tuple))))))
 
-(defn parse-string [holder]
-  (loop [prev nil
-         raw-input (:raw-input holder)
-         acc (StringBuffer.)]
-    (if-let [c (first raw-input)]
-      (let [remaining (subs raw-input 1)]
-        (if (= \" c)
-          (condp = prev
-            nil (recur c remaining acc)
-            \\ (recur c remaining (.. acc
-                                      (deleteCharAt (dec (count acc)))
-                                      (append c)))
-            (assoc holder
-                   :raw-input remaining
-                   :parsed (str acc)))
-          (recur c remaining (.append acc c))))
-      (assoc holder :err "EOF while parse string"))))
+(defparser json-literals []
+  (let->> [literal (choice (string "true")
+                           (string "false")
+                           (string "null"))]
+    (always (case literal
+              "true" true
+              "false" false
+              nil))))
 
-(defn parse-value [raw-input]
-  (let [holder (Holder. raw-input nil nil)]
-    (let [c (first raw-input)]
-      (cond
-        (string? c) (parse-string holder)
-        :else raw-input))))
+(defparser json-value []
+  (choice (json-number)
+          (json-string)
+          (json-literals)
+          (json-array)
+          (json-object)))

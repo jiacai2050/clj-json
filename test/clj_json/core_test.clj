@@ -16,6 +16,8 @@
     "ab" "\"ab\""
     "ab" "  \"ab\" "
     "ab\"cd" "\"ab\\\"cd\""
+    "你好" "\"\\u4f60\\u597d\""
+    "\\abc" "\"\\\\abc\""
     ))
 
 (deftest test-array
@@ -24,7 +26,6 @@
     ["ab" "cd"] "[   \"ab\"   ,     \"cd\" ]"
     [true false nil] "[ true, false , null  ]"
     [["ab"] "cd"] "[  [ \"ab\" ]  ,     \"cd\" ]"
-
     ))
 
 (deftest test-object

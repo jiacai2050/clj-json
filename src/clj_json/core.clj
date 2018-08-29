@@ -13,13 +13,33 @@
            _ (blank)]
     (always (read-string (apply str nums)))))
 
+(def escape-mapping
+  {\" \"
+   \\ \\
+   \/ \/
+   \b \backspace
+   \f \formfeed
+   \n \newline
+   \r \return
+   \t \tab
+   \u \u})
+(def escape-chars (set (map first escape-mapping)))
+
+(defparser hex-digit []
+  (either (digit)
+          (token (->> (range (int \a) (inc (int \f)))
+                      (map clojure.core/char)
+                      set))))
+
 (defparser json-string []
   (let->> [chars (between (>> (blank) (char \"))
                           (>> (char \") (blank))
-                          (many (either (let->> [_ (lookahead (>> (char \\) (char \")))
-                                                 _ (times 2 (any-char))]
-                                          (always \"))
-                                        (token #(not= \" %)))))]
+                          (many (choice (let->> [escape (>> (char \\) (token escape-chars))]
+                                          (if (= \u escape)
+                                            (let->> [unicode-codepoints (times 4 (hex-digit))]
+                                              (always (read-string (apply str \\ \u unicode-codepoints))))
+                                            (always (escape-mapping escape))))
+                                        (token #(not (#{\\ \"} %))))))]
     (always (apply str chars))))
 
 (defparser json-array []
